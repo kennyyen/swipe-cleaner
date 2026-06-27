@@ -25,6 +25,7 @@ type ContextValue = {
   moveToAlbum: (albumId: string) => Promise<void>;
   goBack: () => void;
   commitDeletions: () => Promise<void>;
+  commitSpecificDeletions: (assets: Asset[]) => Promise<void>;
   removeFromQueue: (assetId: string) => void;
   getUri: (asset: Asset) => Promise<string>;
 };
@@ -132,6 +133,20 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
     }
   }, [deleteQueue]);
 
+  const commitSpecificDeletions = useCallback(async (toDelete: Asset[]) => {
+    if (toDelete.length === 0) return;
+    setCommitting(true);
+    try {
+      await Asset.delete(toDelete);
+      const deletedIds = new Set(toDelete.map((a) => a.id));
+      setDeleteQueue((q) => q.filter((a) => !deletedIds.has(a.id)));
+    } catch {
+      // User cancelled
+    } finally {
+      setCommitting(false);
+    }
+  }, []);
+
   const currentAsset = assets[index] ?? null;
   const remaining = Math.max(0, assets.length - index);
 
@@ -158,6 +173,7 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
         moveToAlbum,
         goBack,
         commitDeletions,
+        commitSpecificDeletions,
         removeFromQueue,
         getUri,
       }}

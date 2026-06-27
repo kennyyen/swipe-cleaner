@@ -10,9 +10,11 @@ type Props = {
   isQueued?: boolean;
   isActive?: boolean;
   dimmed?: boolean;
+  /** When provided, renders a check/uncheck badge in the top-right corner */
+  checked?: boolean;
 };
 
-export function PhotoThumbnail({ asset, size, onPress, isQueued, isActive, dimmed }: Props) {
+export function PhotoThumbnail({ asset, size, onPress, isQueued, isActive, dimmed, checked }: Props) {
   const { getUri } = usePhotoLibrary();
   const [uri, setUri] = useState<string | null>(null);
 
@@ -46,6 +48,13 @@ export function PhotoThumbnail({ asset, size, onPress, isQueued, isActive, dimme
 
       {/* Active position indicator */}
       {isActive && <View style={[StyleSheet.absoluteFill, styles.activeBorder]} />}
+
+      {/* Check / uncheck badge (top-right corner) */}
+      {checked !== undefined && (
+        <View style={[styles.checkBadge, checked ? styles.checkBadgeOn : styles.checkBadgeOff]}>
+          <Text style={styles.checkIcon}>{checked ? '✓' : ''}</Text>
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
@@ -72,5 +81,30 @@ const styles = StyleSheet.create({
   activeBorder: {
     borderWidth: 3,
     borderColor: '#fff',
+  },
+  checkBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+  },
+  checkBadgeOn: {
+    backgroundColor: '#44cc44',
+    borderColor: '#44cc44',
+  },
+  checkBadgeOff: {
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    borderColor: '#fff',
+  },
+  checkIcon: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 16,
   },
 });
