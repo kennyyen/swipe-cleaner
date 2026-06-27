@@ -36,6 +36,7 @@ export function SwipeScreen({ settings, onOpenSettings, onOpenLibrary, onOpenDel
     requestPermission,
     currentAsset,
     currentUri,
+    currentCreationTime,
     remaining,
     done,
     loading,
@@ -155,6 +156,7 @@ export function SwipeScreen({ settings, onOpenSettings, onOpenLibrary, onOpenDel
         <PhotoCard
           key={currentAsset.id}
           uri={currentUri}
+          creationTime={currentCreationTime}
           leftAction={settings.leftAction}
           rightAction={settings.rightAction}
           onSwipeLeft={() => executeAction(settings.leftAction)}

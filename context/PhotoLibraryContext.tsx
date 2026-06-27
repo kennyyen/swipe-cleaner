@@ -12,6 +12,7 @@ type ContextValue = {
   startFrom: (index: number) => void;
   currentAsset: Asset | null;
   currentUri: string | null;
+  currentCreationTime: number | null;
   remaining: number;
   done: boolean;
   loading: boolean;
@@ -35,6 +36,7 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
   const [assets, setAssets] = useState<Asset[]>([]);
   const [index, setIndex] = useState(0);
   const [currentUri, setCurrentUri] = useState<string | null>(null);
+  const [currentCreationTime, setCurrentCreationTime] = useState<number | null>(null);
   const [deleteQueue, setDeleteQueue] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [committing, setCommitting] = useState(false);
@@ -62,11 +64,16 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
     return uri;
   }, []);
 
-  // Resolve and preload URIs whenever index changes
+  // Resolve URI + creation time, preload next URI
   useEffect(() => {
     const current = assets[index];
-    if (!current) { setCurrentUri(null); return; }
+    if (!current) {
+      setCurrentUri(null);
+      setCurrentCreationTime(null);
+      return;
+    }
     getUri(current).then(setCurrentUri);
+    current.getCreationTime().then(setCurrentCreationTime);
     if (assets[index + 1]) getUri(assets[index + 1]); // preload next
   }, [assets, index, getUri]);
 
@@ -138,6 +145,7 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
         startFrom,
         currentAsset,
         currentUri,
+        currentCreationTime,
         remaining,
         done: !loading && remaining === 0,
         loading,
