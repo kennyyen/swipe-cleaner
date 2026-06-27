@@ -16,7 +16,8 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import { usePhotoLibrary } from '../context/PhotoLibraryContext';
+import { usePhotoLibrary } from '../hooks/usePhotoLibrary';
+import { useShallow } from 'zustand/react/shallow';
 import type { PhotoGroup } from '../types';
 
 const COLUMNS = 3;
@@ -45,7 +46,7 @@ type CellProps = {
 };
 
 function BurstPhotoCell({ asset, size, isQueued, onToggle }: CellProps) {
-  const { getUri } = usePhotoLibrary();
+  const { getUri } = usePhotoLibrary((s) => ({ getUri: s.getUri }));
   const [uri, setUri] = useState<string | null>(null);
   const translateY = useSharedValue(0);
 
@@ -105,7 +106,15 @@ function BurstPhotoCell({ asset, size, isQueued, onToggle }: CellProps) {
 }
 
 export function BurstDetailScreen({ group, onClose, onStartSwiping }: Props) {
-  const { queueAssets, removeFromQueue, deleteQueue, assetIndexOf, startFrom } = usePhotoLibrary();
+  const { queueAssets, removeFromQueue, deleteQueue, assetIndexOf, startFrom } = usePhotoLibrary(
+    useShallow((s) => ({
+      queueAssets: s.queueAssets,
+      removeFromQueue: s.removeFromQueue,
+      deleteQueue: s.deleteQueue,
+      assetIndexOf: s.assetIndexOf,
+      startFrom: s.startFrom,
+    }))
+  );
 
   const [firstTs, setFirstTs] = useState<number | null>(null);
 
@@ -203,7 +212,7 @@ export function BurstDetailScreen({ group, onClose, onStartSwiping }: Props) {
 }
 
 function SwipeThumb({ asset }: { asset: Asset }) {
-  const { getUri } = usePhotoLibrary();
+  const { getUri } = usePhotoLibrary((s) => ({ getUri: s.getUri }));
   const [uri, setUri] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;

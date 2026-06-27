@@ -11,7 +11,8 @@ import {
 } from 'react-native';
 import { BurstTile } from '../components/BurstTile';
 import { PhotoThumbnail } from '../components/PhotoThumbnail';
-import { usePhotoLibrary } from '../context/PhotoLibraryContext';
+import { usePhotoLibrary } from '../hooks/usePhotoLibrary';
+import { useShallow } from 'zustand/react/shallow';
 import type { PhotoGroup } from '../types';
 
 const COLUMNS = 3;
@@ -37,7 +38,20 @@ export function LibraryScreen({ onStartSwiping, onOpenBurst }: Props) {
     startFrom,
     assetIndexOf,
     loadMoreAssets,
-  } = usePhotoLibrary();
+  } = usePhotoLibrary(useShallow((s) => ({
+    permission: s.permission,
+    requestPermission: s.requestPermission,
+    assets: s.assets,
+    index: s.index,
+    groups: s.groups,
+    groupsLoading: s.groupsLoading,
+    loading: s.loading,
+    loadingMore: s.loadingMore,
+    deleteQueue: s.deleteQueue,
+    startFrom: s.startFrom,
+    assetIndexOf: s.assetIndexOf,
+    loadMoreAssets: s.loadMoreAssets,
+  })));
 
   const queuedIds = new Set(deleteQueue.map((a) => a.id));
 

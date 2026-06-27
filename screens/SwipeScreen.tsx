@@ -9,7 +9,8 @@ import {
   View,
 } from 'react-native';
 import { PhotoCard } from '../components/PhotoCard';
-import { usePhotoLibrary } from '../context/PhotoLibraryContext';
+import { usePhotoLibrary } from '../hooks/usePhotoLibrary';
+import { useShallow } from 'zustand/react/shallow';
 import type { AppSettings, SwipeAction } from '../types';
 
 type Props = {
@@ -54,7 +55,29 @@ export function SwipeScreen({ settings, onOpenSettings, onOpenLibrary, onOpenDel
     moveToAlbum,
     goBack,
     commitDeletions,
-  } = usePhotoLibrary();
+  } = usePhotoLibrary(useShallow((s) => ({
+    permission: s.permission,
+    requestPermission: s.requestPermission,
+    currentAsset: s.currentAsset,
+    currentUri: s.currentUri,
+    currentCreationTime: s.currentCreationTime,
+    currentMediaType: s.currentMediaType,
+    remaining: s.remaining,
+    done: s.done,
+    loading: s.loading,
+    canGoBack: s.canGoBack,
+    deleteQueue: s.deleteQueue,
+    committing: s.committing,
+    isCurrentQueued: s.isCurrentQueued,
+    isRandomMode: s.isRandomMode,
+    toggleRandomMode: s.toggleRandomMode,
+    queueDelete: s.queueDelete,
+    clearDeleteQueue: s.clearDeleteQueue,
+    keep: s.keep,
+    moveToAlbum: s.moveToAlbum,
+    goBack: s.goBack,
+    commitDeletions: s.commitDeletions,
+  })));
 
   const handleGoHome = () => {
     if (deleteQueue.length === 0) {

@@ -9,7 +9,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { usePhotoLibrary } from '../context/PhotoLibraryContext';
+import { usePhotoLibrary } from '../hooks/usePhotoLibrary';
+import { useShallow } from 'zustand/react/shallow';
 import type { AppSettings, SwipeAction } from '../types';
 
 type Props = {
@@ -31,7 +32,9 @@ const THRESHOLD_OPTIONS = [
 ];
 
 export function SettingsScreen({ settings, onSave, onClose }: Props) {
-  const { groupingThresholdSecs, setGroupingThresholdSecs } = usePhotoLibrary();
+  const { groupingThresholdSecs, setGroupingThresholdSecs } = usePhotoLibrary(
+    useShallow((s) => ({ groupingThresholdSecs: s.groupingThresholdSecs, setGroupingThresholdSecs: s.setGroupingThresholdSecs }))
+  );
   const [left, setLeft] = useState<SwipeAction>(settings.leftAction);
   const [right, setRight] = useState<SwipeAction>(settings.rightAction);
   const [albums, setAlbums] = useState<AlbumEntry[]>([]);

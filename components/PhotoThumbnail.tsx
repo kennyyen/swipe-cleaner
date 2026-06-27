@@ -1,7 +1,7 @@
 import type { Asset } from 'expo-media-library';
 import React, { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { usePhotoLibrary } from '../context/PhotoLibraryContext';
+import { usePhotoLibrary } from '../hooks/usePhotoLibrary';
 
 type Props = {
   asset: Asset;
@@ -15,7 +15,7 @@ type Props = {
 };
 
 export function PhotoThumbnail({ asset, size, onPress, isQueued, isActive, dimmed, checked }: Props) {
-  const { getUri } = usePhotoLibrary();
+  const getUri = usePhotoLibrary((s) => s.getUri);
   const [uri, setUri] = useState<string | null>(null);
 
   useEffect(() => {

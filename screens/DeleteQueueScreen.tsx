@@ -11,7 +11,8 @@ import {
   View,
 } from 'react-native';
 import { PhotoThumbnail } from '../components/PhotoThumbnail';
-import { usePhotoLibrary } from '../context/PhotoLibraryContext';
+import { usePhotoLibrary } from '../hooks/usePhotoLibrary';
+import { useShallow } from 'zustand/react/shallow';
 
 const COLUMNS = 3;
 const GAP = 2;
@@ -22,7 +23,9 @@ type Props = {
 };
 
 export function DeleteQueueScreen({ onClose }: Props) {
-  const { deleteQueue, commitSpecificDeletions, committing } = usePhotoLibrary();
+  const { deleteQueue, commitSpecificDeletions, committing } = usePhotoLibrary(
+    useShallow((s) => ({ deleteQueue: s.deleteQueue, commitSpecificDeletions: s.commitSpecificDeletions, committing: s.committing }))
+  );
 
   // Track which IDs are checked (selected for deletion). All start checked.
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
