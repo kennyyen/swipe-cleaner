@@ -32,19 +32,25 @@ export function SwipeScreen({ settings, onOpenSettings }: Props) {
   const {
     permission,
     requestPermission,
-    current,
+    currentAsset,
     currentUri,
     remaining,
     done,
     loading,
+    canGoBack,
+    deleteQueue,
+    committing,
+    isCurrentQueued,
+    queueDelete,
     keep,
-    deleteCurrent,
     moveToAlbum,
+    goBack,
+    commitDeletions,
   } = usePhotoLibrary();
 
-  const executeAction = async (action: SwipeAction) => {
-    if (action.type === 'delete') await deleteCurrent();
-    else if (action.type === 'album') await moveToAlbum(action.albumId);
+  const executeAction = (action: SwipeAction) => {
+    if (action.type === 'delete') queueDelete();
+    else if (action.type === 'album') moveToAlbum(action.albumId);
     else keep();
   };
 
@@ -76,24 +82,64 @@ export function SwipeScreen({ settings, onOpenSettings }: Props) {
     );
   }
 
-  if (done || !current || !currentUri) {
+  if (done) {
     return (
       <View style={styles.center}>
         <Text style={styles.doneTitle}>All done!</Text>
-        <Text style={styles.doneSub}>Your photo library is clean.</Text>
+        <Text style={styles.doneSub}>
+          {deleteQueue.length > 0
+            ? `Ready to delete ${deleteQueue.length} photo${deleteQueue.length === 1 ? '' : 's'}.`
+            : 'Your photo library is clean.'}
+        </Text>
+        {deleteQueue.length > 0 && (
+          <TouchableOpacity
+            style={[styles.btn, styles.deleteBtn, committing && styles.btnDisabled]}
+            onPress={commitDeletions}
+            disabled={committing}
+          >
+            {committing ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.btnText}>Delete {deleteQueue.length} photos</Text>
+            )}
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  }
+
+  if (!currentAsset || !currentUri) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color="#fff" />
       </View>
     );
   }
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.counter}>{remaining} photos left</Text>
+        <Text style={styles.counter}>{remaining} left</Text>
+        {deleteQueue.length > 0 && (
+          <TouchableOpacity
+            onPress={commitDeletions}
+            disabled={committing}
+            style={styles.deleteChip}
+          >
+            {committing ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.deleteChipText}>🗑 {deleteQueue.length}</Text>
+            )}
+          </TouchableOpacity>
+        )}
         <TouchableOpacity onPress={onOpenSettings} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <Text style={styles.gear}>⚙️</Text>
         </TouchableOpacity>
       </View>
 
+      {/* Action hints */}
       <View style={styles.hints}>
         <Text style={[styles.hint, { color: actionColor(settings.leftAction) }]}>
           ← {actionLabel(settings.leftAction)}
@@ -103,9 +149,15 @@ export function SwipeScreen({ settings, onOpenSettings }: Props) {
         </Text>
       </View>
 
+      {/* Card */}
       <View style={styles.cardArea}>
+        {isCurrentQueued && (
+          <View style={styles.queuedBadge}>
+            <Text style={styles.queuedText}>Queued for deletion</Text>
+          </View>
+        )}
         <PhotoCard
-          key={current.id}
+          key={currentAsset.id}
           uri={currentUri}
           leftAction={settings.leftAction}
           rightAction={settings.rightAction}
@@ -113,15 +165,28 @@ export function SwipeScreen({ settings, onOpenSettings }: Props) {
           onSwipeRight={() => executeAction(settings.rightAction)}
         />
       </View>
+
+      {/* Back / forward controls */}
+      <View style={styles.controls}>
+        <TouchableOpacity
+          style={[styles.navBtn, !canGoBack && styles.navBtnDisabled]}
+          onPress={goBack}
+          disabled={!canGoBack}
+        >
+          <Text style={styles.navBtnText}>← Back</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navBtn} onPress={() => executeAction(settings.rightAction)}>
+          <Text style={[styles.navBtnText, { color: actionColor(settings.rightAction) }]}>
+            {actionLabel(settings.rightAction)} →
+          </Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#111',
-  },
+  container: { flex: 1, backgroundColor: '#111' },
   center: {
     flex: 1,
     backgroundColor: '#111',
@@ -133,33 +198,59 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingVertical: 14,
   },
-  counter: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  counter: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  gear: { fontSize: 22 },
+  deleteChip: {
+    backgroundColor: '#ff4444',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    minWidth: 60,
+    alignItems: 'center',
   },
-  gear: {
-    fontSize: 22,
-  },
+  deleteChipText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   hints: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 24,
-    marginBottom: 8,
+    marginBottom: 4,
   },
-  hint: {
-    fontSize: 13,
-    fontWeight: '600',
-    opacity: 0.8,
-  },
+  hint: { fontSize: 13, fontWeight: '600', opacity: 0.8 },
   cardArea: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  queuedBadge: {
+    position: 'absolute',
+    top: 0,
+    backgroundColor: '#ff4444',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+    zIndex: 10,
+  },
+  queuedText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  controls: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+    paddingTop: 12,
+  },
+  navBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#1c1c1c',
+    minWidth: 110,
+    alignItems: 'center',
+  },
+  navBtnDisabled: { opacity: 0.3 },
+  navBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   permText: {
     color: '#fff',
     fontSize: 18,
@@ -172,25 +263,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 36,
     paddingVertical: 14,
     borderRadius: 14,
+    marginTop: 24,
+    minWidth: 200,
+    alignItems: 'center',
   },
-  btnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  loadingText: {
-    color: '#666',
-    fontSize: 15,
-    marginTop: 16,
-  },
-  doneTitle: {
-    color: '#fff',
-    fontSize: 34,
-    fontWeight: '700',
-    marginBottom: 10,
-  },
-  doneSub: {
-    color: '#666',
-    fontSize: 16,
-  },
+  deleteBtn: { backgroundColor: '#ff4444' },
+  btnDisabled: { opacity: 0.5 },
+  btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  loadingText: { color: '#666', fontSize: 15, marginTop: 16 },
+  doneTitle: { color: '#fff', fontSize: 34, fontWeight: '700', marginBottom: 10 },
+  doneSub: { color: '#666', fontSize: 16, textAlign: 'center' },
 });

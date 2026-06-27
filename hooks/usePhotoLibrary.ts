@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Album, Asset, AssetField, MediaType, Query, usePermissions } from 'expo-media-library';
 
 export function usePhotoLibrary() {
   const [permission, requestPermission] = usePermissions();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [index, setIndex] = useState(0);
-  const [currentUri, setCurrentUri] = useState<string | null>(null);
+  const [uriCache, setUriCache] = useState<Record<string, string>>({});
+  const [deleteQueue, setDeleteQueue] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
+  const [committing, setCommitting] = useState(false);
 
-  // Load all photo assets once permissions are granted
+  // Load all photo assets once on permission grant
   useEffect(() => {
     if (!permission?.granted) return;
     setLoading(true);
@@ -22,31 +24,44 @@ export function usePhotoLibrary() {
       });
   }, [permission?.granted]);
 
-  // Resolve URI for the current asset whenever index or assets change
+  // Cache URI for current asset (and preload next)
+  const cacheUri = useCallback(
+    async (asset: Asset) => {
+      if (uriCache[asset.id]) return;
+      const uri = await asset.getUri();
+      setUriCache((prev) => ({ ...prev, [asset.id]: uri }));
+    },
+    [uriCache]
+  );
+
   useEffect(() => {
-    const asset = assets[index];
-    if (!asset) {
-      setCurrentUri(null);
-      return;
-    }
-    asset.getUri().then(setCurrentUri);
+    if (assets[index]) cacheUri(assets[index]);
+    if (assets[index + 1]) cacheUri(assets[index + 1]); // preload next
   }, [assets, index]);
 
-  const keep = useCallback(() => {
-    setIndex((i) => i + 1);
-  }, []);
+  const isQueued = useCallback(
+    (asset: Asset) => deleteQueue.some((a) => a.id === asset.id),
+    [deleteQueue]
+  );
 
-  const deleteCurrent = useCallback(async () => {
+  // Queue photo for deletion and advance
+  const queueDelete = useCallback(() => {
     const asset = assets[index];
     if (!asset) return;
-    try {
-      await asset.delete();
-    } catch {
-      // User cancelled iOS system confirmation dialog
+    if (!isQueued(asset)) {
+      setDeleteQueue((q) => [...q, asset]);
     }
-    // Remove deleted asset from local list; index stays, pointing at next asset
-    setAssets((prev) => prev.filter((_, i) => i !== index));
-  }, [assets, index]);
+    setIndex((i) => i + 1);
+  }, [assets, index, isQueued]);
+
+  // Remove from queue and advance (if already queued) or just advance
+  const keep = useCallback(() => {
+    const asset = assets[index];
+    if (asset && isQueued(asset)) {
+      setDeleteQueue((q) => q.filter((a) => a.id !== asset.id));
+    }
+    setIndex((i) => i + 1);
+  }, [assets, index, isQueued]);
 
   const moveToAlbum = useCallback(async (albumId: string) => {
     const asset = assets[index];
@@ -55,23 +70,50 @@ export function usePhotoLibrary() {
       const album = new Album(albumId);
       await album.add(asset);
     } catch {
-      // Ignore album errors silently
+      // Ignore silently
     }
     setIndex((i) => i + 1);
   }, [assets, index]);
 
+  const goBack = useCallback(() => {
+    setIndex((i) => Math.max(0, i - 1));
+  }, []);
+
+  // Batch-delete all queued photos — shows one iOS system dialog
+  const commitDeletions = useCallback(async () => {
+    if (deleteQueue.length === 0) return;
+    setCommitting(true);
+    try {
+      await Asset.delete(deleteQueue);
+      setDeleteQueue([]);
+    } catch {
+      // User cancelled the system confirmation dialog
+    } finally {
+      setCommitting(false);
+    }
+  }, [deleteQueue]);
+
+  const currentAsset = assets[index] ?? null;
+  const currentUri = currentAsset ? (uriCache[currentAsset.id] ?? null) : null;
   const remaining = Math.max(0, assets.length - index);
+  const done = !loading && remaining === 0;
 
   return {
     permission,
     requestPermission,
-    current: assets[index] ?? null,
+    currentAsset,
     currentUri,
     remaining,
-    done: !loading && remaining === 0,
+    done,
     loading,
+    canGoBack: index > 0,
+    deleteQueue,
+    committing,
+    isCurrentQueued: currentAsset ? isQueued(currentAsset) : false,
+    queueDelete,
     keep,
-    deleteCurrent,
     moveToAlbum,
+    goBack,
+    commitDeletions,
   };
 }
