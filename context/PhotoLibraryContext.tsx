@@ -3,7 +3,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import type { PhotoGroup } from '../types';
 
 const PAGE_SIZE = 200;
-const LOAD_MORE_THRESHOLD = 40; // start loading next page when this many assets left
+const LOAD_MORE_THRESHOLD = 40;
 const URI_PRELOAD_AHEAD = 3;
 
 type PermissionResponse = ReturnType<typeof usePermissions>[0];
@@ -18,12 +18,15 @@ type ContextValue = {
   currentAsset: Asset | null;
   currentUri: string | null;
   currentCreationTime: number | null;
+  currentMediaType: MediaType | null;
   remaining: number;
   done: boolean;
   loading: boolean;
   loadingMore: boolean;
   canGoBack: boolean;
   loadMoreAssets: () => void;
+  isRandomMode: boolean;
+  toggleRandomMode: () => void;
   // Burst grouping
   groups: PhotoGroup[];
   groupsLoading: boolean;
@@ -46,6 +49,13 @@ type ContextValue = {
   getUri: (asset: Asset) => Promise<string>;
 };
 
+function fisherYatesShuffle(arr: number[]): void {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
 const PhotoLibraryContext = createContext<ContextValue | null>(null);
 
 export function PhotoLibraryProvider({ children }: { children: React.ReactNode }) {
@@ -54,11 +64,16 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
   const [index, setIndex] = useState(0);
   const [currentUri, setCurrentUri] = useState<string | null>(null);
   const [currentCreationTime, setCurrentCreationTime] = useState<number | null>(null);
+  const [currentMediaType, setCurrentMediaType] = useState<MediaType | null>(null);
   const [deleteQueue, setDeleteQueue] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [committing, setCommitting] = useState(false);
+  // Random mode
+  const [isRandomMode, setIsRandomMode] = useState(false);
+  const [shuffledOrder, setShuffledOrder] = useState<number[]>([]);
+  const isRandomModeRef = useRef(false);
   // Burst grouping
   const [groupingThresholdSecs, setGroupingThresholdSecs] = useState(5);
   const [creationTimes, setCreationTimes] = useState<Record<string, number>>({});
@@ -66,10 +81,10 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
 
   const uriCacheRef = useRef<Record<string, string>>({});
   const pageOffsetRef = useRef(0);
-  // Track how many assets we've already fetched creation times for
-  const timesFetchedCountRef = useRef(0);
 
-  // Fetch creation times for newly added assets (one batch per page)
+  // Effective index — actual asset position when random mode is on
+  const effectiveIndex = isRandomMode ? (shuffledOrder[index] ?? index) : index;
+
   const fetchCreationTimesForNew = useCallback((newAssets: Asset[], isLastPage: boolean) => {
     if (newAssets.length === 0) return;
     Promise.all(
@@ -90,16 +105,14 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
     setLoading(true);
     setGroupsLoading(true);
     pageOffsetRef.current = 0;
-    timesFetchedCountRef.current = 0;
     new Query()
-      .eq(AssetField.MEDIA_TYPE, MediaType.IMAGE)
+      .within(AssetField.MEDIA_TYPE, [MediaType.IMAGE, MediaType.VIDEO])
       .orderBy({ key: AssetField.CREATION_TIME, ascending: true })
       .limit(PAGE_SIZE)
       .exe()
       .then((results) => {
         setAssets(results);
         pageOffsetRef.current = results.length;
-        timesFetchedCountRef.current = results.length;
         const isLast = results.length < PAGE_SIZE;
         setHasMore(!isLast);
         setLoading(false);
@@ -110,11 +123,12 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
   const loadMoreAssets = useCallback(() => {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
+    const capturedOffset = pageOffsetRef.current;
     new Query()
-      .eq(AssetField.MEDIA_TYPE, MediaType.IMAGE)
+      .within(AssetField.MEDIA_TYPE, [MediaType.IMAGE, MediaType.VIDEO])
       .orderBy({ key: AssetField.CREATION_TIME, ascending: true })
       .limit(PAGE_SIZE)
-      .offset(pageOffsetRef.current)
+      .offset(capturedOffset)
       .exe()
       .then((results) => {
         if (results.length === 0) {
@@ -125,13 +139,34 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
         }
         setAssets((prev) => [...prev, ...results]);
         pageOffsetRef.current += results.length;
-        timesFetchedCountRef.current += results.length;
         const isLast = results.length < PAGE_SIZE;
         setHasMore(!isLast);
         setLoadingMore(false);
         fetchCreationTimesForNew(results, isLast);
+        // In random mode, shuffle and append new asset indices
+        if (isRandomModeRef.current) {
+          const newIndices = Array.from({ length: results.length }, (_, i) => i + capturedOffset);
+          fisherYatesShuffle(newIndices);
+          setShuffledOrder((prev) => [...prev, ...newIndices]);
+        }
       });
   }, [loadingMore, hasMore, fetchCreationTimesForNew]);
+
+  const toggleRandomMode = useCallback(() => {
+    if (!isRandomMode) {
+      const played = Array.from({ length: index }, (_, i) => i);
+      const remaining = Array.from({ length: assets.length - index }, (_, i) => i + index);
+      fisherYatesShuffle(remaining);
+      setShuffledOrder([...played, ...remaining]);
+      setIsRandomMode(true);
+      isRandomModeRef.current = true;
+    } else {
+      const realIdx = shuffledOrder[index] ?? index;
+      setIndex(realIdx);
+      setIsRandomMode(false);
+      isRandomModeRef.current = false;
+    }
+  }, [isRandomMode, index, assets.length, shuffledOrder]);
 
   // Compute groups whenever assets, times, or threshold changes
   const groups = useMemo<PhotoGroup[]>(() => {
@@ -159,7 +194,6 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
     return result;
   }, [assets, creationTimes, groupingThresholdSecs]);
 
-  // Fast asset-id → asset-array-index lookup
   const assetIndexMap = useMemo(() => {
     const map: Record<string, number> = {};
     assets.forEach((a, i) => { map[a.id] = i; });
@@ -178,21 +212,28 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
     return uri;
   }, []);
 
-  // Resolve URI + creation time for current asset; preload ahead; trigger page load near end
+  // Resolve URI + creation time + media type for effective current asset; preload ahead
   useEffect(() => {
-    const current = assets[index];
-    if (!current) { setCurrentUri(null); setCurrentCreationTime(null); return; }
+    const current = assets[effectiveIndex];
+    if (!current) {
+      setCurrentUri(null);
+      setCurrentCreationTime(null);
+      setCurrentMediaType(null);
+      return;
+    }
     getUri(current).then(setCurrentUri);
     current.getCreationTime().then(setCurrentCreationTime);
-    // Preload upcoming URIs
+    current.getMediaType().then(setCurrentMediaType);
+    // Preload upcoming URIs (in effective order)
     for (let i = 1; i <= URI_PRELOAD_AHEAD; i++) {
-      if (assets[index + i]) getUri(assets[index + i]);
+      const nextEffective = isRandomMode ? (shuffledOrder[index + i] ?? index + i) : index + i;
+      if (assets[nextEffective]) getUri(assets[nextEffective]);
     }
     // Load next page when approaching end
     if (assets.length - index <= LOAD_MORE_THRESHOLD && hasMore && !loadingMore) {
       loadMoreAssets();
     }
-  }, [assets, index, getUri, hasMore, loadingMore, loadMoreAssets]);
+  }, [assets, index, effectiveIndex]);
 
   const isQueued = useCallback(
     (asset: Asset) => deleteQueue.some((a) => a.id === asset.id),
@@ -200,11 +241,11 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
   );
 
   const queueDelete = useCallback(() => {
-    const asset = assets[index];
+    const asset = assets[effectiveIndex];
     if (!asset) return;
     if (!isQueued(asset)) setDeleteQueue((q) => [...q, asset]);
     setIndex((i) => i + 1);
-  }, [assets, index, isQueued]);
+  }, [assets, effectiveIndex, isQueued]);
 
   const queueAssets = useCallback((toQueue: Asset[]) => {
     setDeleteQueue((q) => {
@@ -217,22 +258,26 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
   const clearDeleteQueue = useCallback(() => setDeleteQueue([]), []);
 
   const keep = useCallback(() => {
-    const asset = assets[index];
+    const asset = assets[effectiveIndex];
     if (asset && isQueued(asset)) setDeleteQueue((q) => q.filter((a) => a.id !== asset.id));
     setIndex((i) => i + 1);
-  }, [assets, index, isQueued]);
+  }, [assets, effectiveIndex, isQueued]);
 
   const moveToAlbum = useCallback(async (albumId: string) => {
-    const asset = assets[index];
+    const asset = assets[effectiveIndex];
     if (!asset) return;
     try { await new Album(albumId).add(asset); } catch {}
     setIndex((i) => i + 1);
-  }, [assets, index]);
+  }, [assets, effectiveIndex]);
 
   const goBack = useCallback(() => setIndex((i) => Math.max(0, i - 1)), []);
 
   const startFrom = useCallback(
-    (newIndex: number) => setIndex(Math.max(0, Math.min(newIndex, assets.length - 1))),
+    (newIndex: number) => {
+      setIndex(Math.max(0, Math.min(newIndex, assets.length - 1)));
+      setIsRandomMode(false);
+      isRandomModeRef.current = false;
+    },
     [assets.length]
   );
 
@@ -260,7 +305,7 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
     } catch {} finally { setCommitting(false); }
   }, []);
 
-  const currentAsset = assets[index] ?? null;
+  const currentAsset = assets[effectiveIndex] ?? null;
   const remaining = Math.max(0, assets.length - index);
 
   return (
@@ -268,13 +313,14 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
       value={{
         permission, requestPermission,
         assets, index, startFrom,
-        currentAsset, currentUri, currentCreationTime,
+        currentAsset, currentUri, currentCreationTime, currentMediaType,
         remaining,
         done: !loading && !hasMore && remaining === 0,
         loading,
         loadingMore,
         canGoBack: index > 0,
         loadMoreAssets,
+        isRandomMode, toggleRandomMode,
         groups, groupsLoading, groupingThresholdSecs, setGroupingThresholdSecs,
         assetIndexOf,
         deleteQueue, committing,

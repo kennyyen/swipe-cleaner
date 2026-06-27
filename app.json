@@ -14,7 +14,8 @@
           "savePhotosPermission": "Allow Swipe Cleaner to move photos into albums.",
           "isAccessMediaLocationEnabled": true
         }
-      ]
+      ],
+      "expo-video"
     ],
     "ios": {
       "bundleIdentifier": "com.kennyyen.swipecleaner",

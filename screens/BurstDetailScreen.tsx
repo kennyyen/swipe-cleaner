@@ -1,22 +1,28 @@
 import type { Asset } from 'expo-media-library';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Dimensions,
-  FlatList,
+  Image,
   SafeAreaView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { PhotoThumbnail } from '../components/PhotoThumbnail';
+import { FlatList, Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { usePhotoLibrary } from '../context/PhotoLibraryContext';
 import type { PhotoGroup } from '../types';
 
 const COLUMNS = 3;
 const GAP = 2;
 const CELL_SIZE = (Dimensions.get('window').width - GAP * (COLUMNS - 1)) / COLUMNS;
+const SWIPE_THRESHOLD = -38;
 
 type Props = {
   group: PhotoGroup;
@@ -31,49 +37,99 @@ function formatTs(ms: number): string {
   });
 }
 
-export function BurstDetailScreen({ group, onClose, onStartSwiping }: Props) {
-  const { queueAssets, deleteQueue, assetIndexOf, startFrom, committing } = usePhotoLibrary();
+type CellProps = {
+  asset: Asset;
+  size: number;
+  isQueued: boolean;
+  onToggle: () => void;
+};
 
-  // All start unchecked — user selects what to queue
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+function BurstPhotoCell({ asset, size, isQueued, onToggle }: CellProps) {
+  const { getUri } = usePhotoLibrary();
+  const [uri, setUri] = useState<string | null>(null);
+  const translateY = useSharedValue(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    getUri(asset).then((u) => { if (!cancelled) setUri(u); });
+    return () => { cancelled = true; };
+  }, [asset.id]);
+
+  const pan = Gesture.Pan()
+    .activeOffsetY([-12, Number.MAX_SAFE_INTEGER])  // only activate on upward drag
+    .failOffsetY([Number.MIN_SAFE_INTEGER, 8])      // fail if dragged down first
+    .onUpdate((e) => {
+      if (e.translationY < 0) {
+        translateY.value = e.translationY * 0.35;
+      }
+    })
+    .onEnd((e) => {
+      if (e.translationY < SWIPE_THRESHOLD) {
+        runOnJS(onToggle)();
+      }
+      translateY.value = withSpring(0, { damping: 18 });
+    })
+    .onFinalize(() => {
+      translateY.value = withSpring(0, { damping: 18 });
+    });
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
+
+  return (
+    <GestureDetector gesture={pan}>
+      <Animated.View style={[{ width: size, height: size, overflow: 'hidden', backgroundColor: '#222' }, animStyle]}>
+        {uri ? (
+          <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        ) : (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#1a1a1a' }]} />
+        )}
+
+        {/* Queued overlay */}
+        {isQueued && (
+          <View style={[StyleSheet.absoluteFill, styles.queuedOverlay]}>
+            <Text style={styles.queuedIcon}>🗑</Text>
+          </View>
+        )}
+
+        {/* Swipe hint arrow */}
+        {!isQueued && (
+          <View style={styles.hintArrow}>
+            <Text style={styles.hintArrowText}>↑</Text>
+          </View>
+        )}
+      </Animated.View>
+    </GestureDetector>
+  );
+}
+
+export function BurstDetailScreen({ group, onClose, onStartSwiping }: Props) {
+  const { queueAssets, removeFromQueue, deleteQueue, assetIndexOf, startFrom } = usePhotoLibrary();
+
   const [firstTs, setFirstTs] = useState<number | null>(null);
 
   useEffect(() => {
     group.assets[0].getCreationTime().then(setFirstTs);
   }, [group.assets[0].id]);
 
-  const toggle = useCallback((assetId: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(assetId)) next.delete(assetId);
-      else next.add(assetId);
-      return next;
-    });
-  }, []);
-
-  const selectAll = () => setSelected(new Set(group.assets.map((a) => a.id)));
-  const selectNone = () => setSelected(new Set());
-
-  const selectedAssets = useMemo(
-    () => group.assets.filter((a) => selected.has(a.id)),
-    [group.assets, selected]
-  );
-
   const isInQueue = useCallback(
     (asset: Asset) => deleteQueue.some((a) => a.id === asset.id),
     [deleteQueue]
   );
 
-  const handleQueue = () => {
-    if (selectedAssets.length === 0) return;
-    queueAssets(selectedAssets);
-    setSelected(new Set()); // clear selection after queuing
-  };
+  const toggleQueue = useCallback((asset: Asset) => {
+    if (isInQueue(asset)) {
+      removeFromQueue(asset.id);
+    } else {
+      queueAssets([asset]);
+    }
+  }, [isInQueue, removeFromQueue, queueAssets]);
 
-  const handleSwipeFrom = (asset: Asset) => {
-    startFrom(assetIndexOf(asset.id));
-    onStartSwiping();
-  };
+  const queueAll = () => queueAssets(group.assets);
+  const dequeueAll = () => group.assets.forEach((a) => removeFromQueue(a.id));
+
+  const queuedCount = group.assets.filter(isInQueue).length;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -94,20 +150,19 @@ export function BurstDetailScreen({ group, onClose, onStartSwiping }: Props) {
       {/* Toolbar */}
       <View style={styles.toolbar}>
         <Text style={styles.toolbarCount}>
-          {selected.size} selected
-          {selected.size > 0 && ` · ${group.assets.filter((a) => isInQueue(a)).length} already queued`}
+          {queuedCount > 0
+            ? `${queuedCount} queued for deletion`
+            : 'Swipe ↑ on a photo to queue it'}
         </Text>
         <View style={styles.toolbarBtns}>
-          <TouchableOpacity onPress={selectAll}>
+          <TouchableOpacity onPress={queueAll}>
             <Text style={styles.toolbarBtn}>All</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={selectNone}>
-            <Text style={styles.toolbarBtn}>None</Text>
+          <TouchableOpacity onPress={dequeueAll}>
+            <Text style={[styles.toolbarBtn, { color: '#888' }]}>None</Text>
           </TouchableOpacity>
         </View>
       </View>
-
-      <Text style={styles.hint}>Tap to select · Long-press to start swiping from photo</Text>
 
       {/* Grid */}
       <FlatList
@@ -116,64 +171,48 @@ export function BurstDetailScreen({ group, onClose, onStartSwiping }: Props) {
         numColumns={COLUMNS}
         columnWrapperStyle={styles.row}
         ItemSeparatorComponent={() => <View style={{ height: GAP }} />}
+        contentContainerStyle={styles.grid}
         renderItem={({ item }) => (
-          <PhotoThumbnail
+          <BurstPhotoCell
             asset={item}
             size={CELL_SIZE}
-            onPress={() => toggle(item.id)}
-            checked={selected.has(item.id)}
             isQueued={isInQueue(item)}
-            dimmed={!selected.has(item.id) && !isInQueue(item)}
+            onToggle={() => toggleQueue(item)}
           />
         )}
-        contentContainerStyle={styles.grid}
         ListFooterComponent={
-          /* Swipe-from section at the bottom */
           <View style={styles.swipeSection}>
             <Text style={styles.swipeSectionTitle}>Start swiping from this burst</Text>
-            <FlatList
-              data={group.assets}
-              keyExtractor={(a) => a.id}
-              numColumns={COLUMNS}
-              columnWrapperStyle={styles.row}
-              ItemSeparatorComponent={() => <View style={{ height: GAP }} />}
-              scrollEnabled={false}
-              renderItem={({ item }) => (
-                <PhotoThumbnail
-                  asset={item}
-                  size={CELL_SIZE}
-                  onPress={() => handleSwipeFrom(item)}
-                  isActive={false}
-                />
-              )}
-            />
+            <View style={styles.swipeRow}>
+              {group.assets.map((asset) => (
+                <TouchableOpacity
+                  key={asset.id}
+                  onPress={() => { startFrom(assetIndexOf(asset.id)); onStartSwiping(); }}
+                  style={[styles.swipeThumb, { width: CELL_SIZE, height: CELL_SIZE }]}
+                >
+                  <SwipeThumb asset={asset} />
+                  <Text style={styles.swipeThumbLabel}>▶</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         }
       />
-
-      {/* Footer */}
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[
-            styles.queueBtn,
-            (selected.size === 0 || committing) && styles.queueBtnDisabled,
-          ]}
-          onPress={handleQueue}
-          disabled={selected.size === 0 || committing}
-        >
-          {committing ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.queueBtnText}>
-              {selected.size === 0
-                ? 'Select photos to queue'
-                : `Queue ${selected.size} for deletion`}
-            </Text>
-          )}
-        </TouchableOpacity>
-      </View>
     </SafeAreaView>
   );
+}
+
+function SwipeThumb({ asset }: { asset: Asset }) {
+  const { getUri } = usePhotoLibrary();
+  const [uri, setUri] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getUri(asset).then((u) => { if (!cancelled) setUri(u); });
+    return () => { cancelled = true; };
+  }, [asset.id]);
+  return uri ? (
+    <Image source={{ uri }} style={[StyleSheet.absoluteFill, { opacity: 0.65 }]} resizeMode="cover" />
+  ) : null;
 }
 
 const styles = StyleSheet.create({
@@ -198,44 +237,54 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  toolbarCount: { color: '#aaa', fontSize: 13 },
+  toolbarCount: { color: '#aaa', fontSize: 13, flex: 1 },
   toolbarBtns: { flexDirection: 'row', gap: 16 },
   toolbarBtn: { color: '#4488ff', fontSize: 15, fontWeight: '600' },
-  hint: { color: '#444', fontSize: 12, textAlign: 'center', marginBottom: 8 },
   row: { gap: GAP },
-  grid: { paddingBottom: 140 },
+  grid: { paddingBottom: 24 },
+  queuedOverlay: {
+    backgroundColor: 'rgba(255,68,68,0.45)',
+    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
+    padding: 6,
+  },
+  queuedIcon: { fontSize: 18 },
+  hintArrow: {
+    position: 'absolute',
+    top: 4,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  hintArrowText: { color: 'rgba(255,255,255,0.45)', fontSize: 13, fontWeight: '700' },
   swipeSection: {
     paddingTop: 20,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#222',
-    marginTop: 16,
+    marginTop: 12,
+    paddingHorizontal: GAP,
   },
   swipeSectionTitle: {
     color: '#555',
-    fontSize: 12,
+    fontSize: 11,
     textAlign: 'center',
     marginBottom: 10,
     letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
-  footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#1a1a1a',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#333',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 36,
+  swipeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: GAP,
   },
-  queueBtn: {
-    backgroundColor: '#ff4444',
-    borderRadius: 14,
-    paddingVertical: 14,
+  swipeThumb: {
+    overflow: 'hidden',
+    backgroundColor: '#222',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  queueBtnDisabled: { opacity: 0.4 },
-  queueBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  swipeThumbLabel: {
+    color: '#fff',
+    fontSize: 22,
+  },
 });

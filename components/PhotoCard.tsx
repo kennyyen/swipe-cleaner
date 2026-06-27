@@ -1,3 +1,5 @@
+import { MediaType } from 'expo-media-library';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import React from 'react';
 import { Dimensions, StyleSheet, Text } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -19,6 +21,7 @@ const MAX_ZOOM = 5;
 type Props = {
   uri: string;
   creationTime: number | null;
+  mediaType?: MediaType | null;
   leftAction: SwipeAction;
   rightAction: SwipeAction;
   onSwipeLeft: () => void;
@@ -48,19 +51,37 @@ function formatDate(ts: number): string {
   });
 }
 
+function VideoPlayer({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = true;
+    p.play();
+  });
+  return (
+    <VideoView
+      player={player}
+      style={StyleSheet.absoluteFill}
+      contentFit="contain"
+      nativeControls={false}
+    />
+  );
+}
+
 export function PhotoCard({
   uri,
   creationTime,
+  mediaType,
   leftAction,
   rightAction,
   onSwipeLeft,
   onSwipeRight,
 }: Props) {
+  const isVideo = mediaType === MediaType.VIDEO;
+
   // Card-level swipe values
   const swipeX = useSharedValue(0);
   const swipeY = useSharedValue(0);
 
-  // Image-level zoom + pan values
+  // Image-level zoom + pan values (images only)
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
   const imgX = useSharedValue(0);
@@ -79,6 +100,7 @@ export function PhotoCard({
   };
 
   const pinch = Gesture.Pinch()
+    .enabled(!isVideo)
     .onUpdate((e) => {
       scale.value = Math.min(MAX_ZOOM, Math.max(1, savedScale.value * e.scale));
     })
@@ -93,6 +115,7 @@ export function PhotoCard({
   const doubleTap = Gesture.Tap()
     .numberOfTaps(2)
     .maxDuration(250)
+    .enabled(!isVideo)
     .onEnd(() => {
       if (scale.value > 1.01) {
         resetZoom();
@@ -101,18 +124,16 @@ export function PhotoCard({
 
   const pan = Gesture.Pan()
     .onUpdate((e) => {
-      if (scale.value > 1.01) {
-        // Panning within zoomed image — don't swipe
+      if (!isVideo && scale.value > 1.01) {
         imgX.value = savedImgX.value + e.translationX;
         imgY.value = savedImgY.value + e.translationY;
       } else {
-        // Swiping the card
         swipeX.value = e.translationX;
         swipeY.value = e.translationY * 0.4;
       }
     })
     .onEnd((e) => {
-      if (scale.value > 1.01) {
+      if (!isVideo && scale.value > 1.01) {
         savedImgX.value = imgX.value;
         savedImgY.value = imgY.value;
       } else {
@@ -157,7 +178,6 @@ export function PhotoCard({
     ],
   }));
 
-  // Hide swipe labels while zoomed in
   const leftLabelStyle = useAnimatedStyle(() => ({
     opacity:
       scale.value > 1.01
@@ -178,19 +198,24 @@ export function PhotoCard({
   return (
     <GestureDetector gesture={composed}>
       <Animated.View style={[styles.card, cardStyle]}>
-        {/* Zoomable image */}
-        <Animated.Image
-          source={{ uri }}
-          style={[StyleSheet.absoluteFill, imageStyle]}
-          resizeMode="cover"
-        />
+        {isVideo ? (
+          <VideoPlayer uri={uri} />
+        ) : (
+          <Animated.Image
+            source={{ uri }}
+            style={[StyleSheet.absoluteFill, imageStyle]}
+            resizeMode="cover"
+          />
+        )}
 
         {/* Timestamp */}
         {creationTime != null && (
           <Animated.View style={[styles.timestamp, useAnimatedStyle(() => ({
             opacity: scale.value > 1.01 ? 0 : 1,
           }))]}>
-            <Text style={styles.timestampText}>{formatDate(creationTime)}</Text>
+            <Text style={styles.timestampText}>
+              {isVideo ? '▶ ' : ''}{formatDate(creationTime)}
+            </Text>
           </Animated.View>
         )}
 

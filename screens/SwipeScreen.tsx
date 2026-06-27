@@ -38,6 +38,7 @@ export function SwipeScreen({ settings, onOpenSettings, onOpenLibrary, onOpenDel
     currentAsset,
     currentUri,
     currentCreationTime,
+    currentMediaType,
     remaining,
     done,
     loading,
@@ -45,6 +46,8 @@ export function SwipeScreen({ settings, onOpenSettings, onOpenLibrary, onOpenDel
     deleteQueue,
     committing,
     isCurrentQueued,
+    isRandomMode,
+    toggleRandomMode,
     queueDelete,
     clearDeleteQueue,
     keep,
@@ -135,9 +138,14 @@ export function SwipeScreen({ settings, onOpenSettings, onOpenLibrary, onOpenDel
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleGoHome} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={styles.headerIcon}>⊞</Text>
-        </TouchableOpacity>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={handleGoHome} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Text style={styles.headerIcon}>⊞</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={toggleRandomMode} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Text style={[styles.headerIcon, isRandomMode && styles.headerIconActive]}>🔀</Text>
+          </TouchableOpacity>
+        </View>
 
         <Text style={styles.counter}>{remaining} left</Text>
 
@@ -179,6 +187,7 @@ export function SwipeScreen({ settings, onOpenSettings, onOpenLibrary, onOpenDel
           key={currentAsset.id}
           uri={currentUri}
           creationTime={currentCreationTime}
+          mediaType={currentMediaType}
           leftAction={settings.leftAction}
           rightAction={settings.rightAction}
           onSwipeLeft={() => executeAction(settings.leftAction)}
@@ -224,7 +233,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 14,
   },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerIcon: { fontSize: 22 },
+  headerIconActive: { opacity: 1 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   counter: { color: '#fff', fontSize: 16, fontWeight: '600' },
   deleteChip: {
