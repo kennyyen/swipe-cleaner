@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { usePhotoLibrary } from '../context/PhotoLibraryContext';
 import type { AppSettings, SwipeAction } from '../types';
 
 type Props = {
@@ -21,7 +22,16 @@ type ActionType = SwipeAction['type'];
 
 type AlbumEntry = { id: string; title: string };
 
+const THRESHOLD_OPTIONS = [
+  { label: '2s', value: 2 },
+  { label: '5s', value: 5 },
+  { label: '10s', value: 10 },
+  { label: '30s', value: 30 },
+  { label: '60s', value: 60 },
+];
+
 export function SettingsScreen({ settings, onSave, onClose }: Props) {
+  const { groupingThresholdSecs, setGroupingThresholdSecs } = usePhotoLibrary();
   const [left, setLeft] = useState<SwipeAction>(settings.leftAction);
   const [right, setRight] = useState<SwipeAction>(settings.rightAction);
   const [albums, setAlbums] = useState<AlbumEntry[]>([]);
@@ -115,6 +125,35 @@ export function SettingsScreen({ settings, onSave, onClose }: Props) {
           }
           onPickAlbum={() => setPickingFor('right')}
         />
+
+        {/* Burst grouping threshold */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Burst Grouping Window</Text>
+          <Text style={styles.sectionDesc}>
+            Photos taken within this window are grouped as a burst in the library.
+          </Text>
+          <View style={styles.thresholdRow}>
+            {THRESHOLD_OPTIONS.map((opt) => (
+              <TouchableOpacity
+                key={opt.value}
+                style={[
+                  styles.thresholdChip,
+                  groupingThresholdSecs === opt.value && styles.thresholdChipActive,
+                ]}
+                onPress={() => setGroupingThresholdSecs(opt.value)}
+              >
+                <Text
+                  style={[
+                    styles.thresholdChipText,
+                    groupingThresholdSecs === opt.value && styles.thresholdChipTextActive,
+                  ]}
+                >
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -186,7 +225,20 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     textTransform: 'uppercase',
     marginBottom: 2,
+    color: '#aaa',
   },
+  sectionDesc: { color: '#666', fontSize: 13, lineHeight: 18 },
+  thresholdRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  thresholdChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  thresholdChipActive: { backgroundColor: '#4488ff', borderColor: '#4488ff' },
+  thresholdChipText: { color: '#888', fontSize: 14, fontWeight: '600' },
+  thresholdChipTextActive: { color: '#fff' },
   optRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   radio: {
     width: 22,
