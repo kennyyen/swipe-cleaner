@@ -8,12 +8,14 @@ import {
   View,
 } from 'react-native';
 import { PhotoCard } from '../components/PhotoCard';
-import { usePhotoLibrary } from '../hooks/usePhotoLibrary';
+import { usePhotoLibrary } from '../context/PhotoLibraryContext';
 import type { AppSettings, SwipeAction } from '../types';
 
 type Props = {
   settings: AppSettings;
   onOpenSettings: () => void;
+  onOpenLibrary: () => void;
+  onOpenDeleteQueue: () => void;
 };
 
 function actionLabel(action: SwipeAction): string {
@@ -28,7 +30,7 @@ function actionColor(action: SwipeAction): string {
   return '#4488ff';
 }
 
-export function SwipeScreen({ settings, onOpenSettings }: Props) {
+export function SwipeScreen({ settings, onOpenSettings, onOpenLibrary, onOpenDeleteQueue }: Props) {
   const {
     permission,
     requestPermission,
@@ -55,11 +57,7 @@ export function SwipeScreen({ settings, onOpenSettings }: Props) {
   };
 
   if (!permission) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color="#fff" />
-      </View>
-    );
+    return <View style={styles.center}><ActivityIndicator color="#fff" /></View>;
   }
 
   if (!permission.granted) {
@@ -88,7 +86,7 @@ export function SwipeScreen({ settings, onOpenSettings }: Props) {
         <Text style={styles.doneTitle}>All done!</Text>
         <Text style={styles.doneSub}>
           {deleteQueue.length > 0
-            ? `Ready to delete ${deleteQueue.length} photo${deleteQueue.length === 1 ? '' : 's'}.`
+            ? `${deleteQueue.length} photo${deleteQueue.length === 1 ? '' : 's'} queued for deletion.`
             : 'Your photo library is clean.'}
         </Text>
         {deleteQueue.length > 0 && (
@@ -97,11 +95,9 @@ export function SwipeScreen({ settings, onOpenSettings }: Props) {
             onPress={commitDeletions}
             disabled={committing}
           >
-            {committing ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.btnText}>Delete {deleteQueue.length} photos</Text>
-            )}
+            {committing
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.btnText}>Delete {deleteQueue.length} photos</Text>}
           </TouchableOpacity>
         )}
       </View>
@@ -109,37 +105,37 @@ export function SwipeScreen({ settings, onOpenSettings }: Props) {
   }
 
   if (!currentAsset || !currentUri) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color="#fff" />
-      </View>
-    );
+    return <View style={styles.center}><ActivityIndicator color="#fff" /></View>;
   }
 
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.counter}>{remaining} left</Text>
-        {deleteQueue.length > 0 && (
-          <TouchableOpacity
-            onPress={commitDeletions}
-            disabled={committing}
-            style={styles.deleteChip}
-          >
-            {committing ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.deleteChipText}>🗑 {deleteQueue.length}</Text>
-            )}
-          </TouchableOpacity>
-        )}
-        <TouchableOpacity onPress={onOpenSettings} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={styles.gear}>⚙️</Text>
+        <TouchableOpacity onPress={onOpenLibrary} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Text style={styles.headerIcon}>⊞</Text>
         </TouchableOpacity>
+
+        <Text style={styles.counter}>{remaining} left</Text>
+
+        <View style={styles.headerRight}>
+          {deleteQueue.length > 0 && (
+            <TouchableOpacity
+              onPress={onOpenDeleteQueue}
+              style={styles.deleteChip}
+            >
+              {committing
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={styles.deleteChipText}>🗑 {deleteQueue.length}</Text>}
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={onOpenSettings} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Text style={styles.headerIcon}>⚙️</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Action hints */}
+      {/* Swipe hints */}
       <View style={styles.hints}>
         <Text style={[styles.hint, { color: actionColor(settings.leftAction) }]}>
           ← {actionLabel(settings.leftAction)}
@@ -149,7 +145,7 @@ export function SwipeScreen({ settings, onOpenSettings }: Props) {
         </Text>
       </View>
 
-      {/* Card */}
+      {/* Card area */}
       <View style={styles.cardArea}>
         {isCurrentQueued && (
           <View style={styles.queuedBadge}>
@@ -166,7 +162,7 @@ export function SwipeScreen({ settings, onOpenSettings }: Props) {
         />
       </View>
 
-      {/* Back / forward controls */}
+      {/* Navigation controls */}
       <View style={styles.controls}>
         <TouchableOpacity
           style={[styles.navBtn, !canGoBack && styles.navBtnDisabled]}
@@ -175,7 +171,10 @@ export function SwipeScreen({ settings, onOpenSettings }: Props) {
         >
           <Text style={styles.navBtnText}>← Back</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navBtn} onPress={() => executeAction(settings.rightAction)}>
+        <TouchableOpacity
+          style={styles.navBtn}
+          onPress={() => executeAction(settings.rightAction)}
+        >
           <Text style={[styles.navBtnText, { color: actionColor(settings.rightAction) }]}>
             {actionLabel(settings.rightAction)} →
           </Text>
@@ -201,14 +200,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 14,
   },
+  headerIcon: { fontSize: 22 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   counter: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  gear: { fontSize: 22 },
   deleteChip: {
     backgroundColor: '#ff4444',
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 6,
-    minWidth: 60,
+    minWidth: 58,
     alignItems: 'center',
   },
   deleteChipText: { color: '#fff', fontSize: 14, fontWeight: '700' },
@@ -219,11 +219,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   hint: { fontSize: 13, fontWeight: '600', opacity: 0.8 },
-  cardArea: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  cardArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   queuedBadge: {
     position: 'absolute',
     top: 0,
