@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Alert,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -45,11 +46,32 @@ export function SwipeScreen({ settings, onOpenSettings, onOpenLibrary, onOpenDel
     committing,
     isCurrentQueued,
     queueDelete,
+    clearDeleteQueue,
     keep,
     moveToAlbum,
     goBack,
     commitDeletions,
   } = usePhotoLibrary();
+
+  const handleGoHome = () => {
+    if (deleteQueue.length === 0) {
+      onOpenLibrary();
+      return;
+    }
+    Alert.alert(
+      'Go back to library?',
+      `You have ${deleteQueue.length} photo${deleteQueue.length === 1 ? '' : 's'} queued for deletion.`,
+      [
+        { text: 'Keep queue & go home', onPress: onOpenLibrary },
+        {
+          text: 'Discard queue & go home',
+          style: 'destructive',
+          onPress: () => { clearDeleteQueue(); onOpenLibrary(); },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
 
   const executeAction = (action: SwipeAction) => {
     if (action.type === 'delete') queueDelete();
@@ -113,7 +135,7 @@ export function SwipeScreen({ settings, onOpenSettings, onOpenLibrary, onOpenDel
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={onOpenLibrary} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+        <TouchableOpacity onPress={handleGoHome} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <Text style={styles.headerIcon}>⊞</Text>
         </TouchableOpacity>
 

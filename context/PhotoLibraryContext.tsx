@@ -30,6 +30,7 @@ type ContextValue = {
   isCurrentQueued: boolean;
   queueDelete: () => void;
   queueAssets: (assets: Asset[]) => void;
+  clearDeleteQueue: () => void;
   keep: () => void;
   moveToAlbum: (albumId: string) => Promise<void>;
   goBack: () => void;
@@ -160,6 +161,8 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
     });
   }, []);
 
+  const clearDeleteQueue = useCallback(() => setDeleteQueue([]), []);
+
   const keep = useCallback(() => {
     const asset = assets[index];
     if (asset && isQueued(asset)) setDeleteQueue((q) => q.filter((a) => a.id !== asset.id));
@@ -221,7 +224,7 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
         assetIndexOf,
         deleteQueue, committing,
         isCurrentQueued: currentAsset ? isQueued(currentAsset) : false,
-        queueDelete, queueAssets, keep, moveToAlbum, goBack,
+        queueDelete, queueAssets, clearDeleteQueue, keep, moveToAlbum, goBack,
         commitDeletions, commitSpecificDeletions, removeFromQueue,
         getUri,
       }}
