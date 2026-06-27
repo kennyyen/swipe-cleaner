@@ -2,13 +2,13 @@ import { Album } from 'expo-media-library';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary';
 import { useShallow } from 'zustand/react/shallow';
 import type { AppSettings, SwipeAction } from '../types';

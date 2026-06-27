@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { usePhotoStore } from './store/photoStore';
 import { DeleteQueueScreen } from './screens/DeleteQueueScreen';
 import { BurstDetailScreen } from './screens/BurstDetailScreen';
@@ -27,6 +28,7 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
       <StatusBar style="light" />
       {screen === 'library' && (
         <LibraryScreen
@@ -59,6 +61,7 @@ export default function App() {
           onStartSwiping={() => setScreen('swipe')}
         />
       )}
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

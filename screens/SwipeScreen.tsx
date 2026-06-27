@@ -2,12 +2,12 @@ import React from 'react';
 import {
   ActivityIndicator,
   Alert,
-  SafeAreaView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { PhotoCard } from '../components/PhotoCard';
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary';
 import { useShallow } from 'zustand/react/shallow';

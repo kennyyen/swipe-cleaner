@@ -3,12 +3,12 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
-  SafeAreaView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { BurstTile } from '../components/BurstTile';
 import { PhotoThumbnail } from '../components/PhotoThumbnail';
 import { usePhotoLibrary } from '../hooks/usePhotoLibrary';
