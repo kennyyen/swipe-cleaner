@@ -32,9 +32,11 @@ export function LibraryScreen({ onStartSwiping, onOpenBurst }: Props) {
     groups,
     groupsLoading,
     loading,
+    loadingMore,
     deleteQueue,
     startFrom,
     assetIndexOf,
+    loadMoreAssets,
   } = usePhotoLibrary();
 
   const queuedIds = new Set(deleteQueue.map((a) => a.id));
@@ -113,6 +115,8 @@ export function LibraryScreen({ onStartSwiping, onOpenBurst }: Props) {
         numColumns={COLUMNS}
         columnWrapperStyle={styles.row}
         ItemSeparatorComponent={() => <View style={{ height: GAP }} />}
+        onEndReached={loadMoreAssets}
+        onEndReachedThreshold={0.5}
         renderItem={({ item: group }) =>
           group.isBurst ? (
             <BurstTile
@@ -138,6 +142,13 @@ export function LibraryScreen({ onStartSwiping, onOpenBurst }: Props) {
           index,
         })}
         contentContainerStyle={styles.grid}
+        ListFooterComponent={
+          loadingMore ? (
+            <View style={styles.footerLoader}>
+              <ActivityIndicator color="#555" size="small" />
+            </View>
+          ) : null
+        }
       />
     </SafeAreaView>
   );
@@ -170,6 +181,7 @@ const styles = StyleSheet.create({
   sectionHint: { color: '#555', fontSize: 12, textAlign: 'center', marginBottom: 10 },
   row: { gap: GAP },
   grid: { paddingBottom: 24 },
+  footerLoader: { paddingVertical: 20, alignItems: 'center' },
   permText: { color: '#fff', fontSize: 18, textAlign: 'center', marginBottom: 28, lineHeight: 26 },
   btn: { backgroundColor: '#4488ff', paddingHorizontal: 36, paddingVertical: 14, borderRadius: 14 },
   btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },

@@ -2,6 +2,10 @@ import { Album, Asset, AssetField, MediaType, Query, usePermissions } from 'expo
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { PhotoGroup } from '../types';
 
+const PAGE_SIZE = 200;
+const LOAD_MORE_THRESHOLD = 40; // start loading next page when this many assets left
+const URI_PRELOAD_AHEAD = 3;
+
 type PermissionResponse = ReturnType<typeof usePermissions>[0];
 type RequestPermission = ReturnType<typeof usePermissions>[1];
 
@@ -17,7 +21,9 @@ type ContextValue = {
   remaining: number;
   done: boolean;
   loading: boolean;
+  loadingMore: boolean;
   canGoBack: boolean;
+  loadMoreAssets: () => void;
   // Burst grouping
   groups: PhotoGroup[];
   groupsLoading: boolean;
@@ -50,6 +56,8 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
   const [currentCreationTime, setCurrentCreationTime] = useState<number | null>(null);
   const [deleteQueue, setDeleteQueue] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [committing, setCommitting] = useState(false);
   // Burst grouping
   const [groupingThresholdSecs, setGroupingThresholdSecs] = useState(5);
@@ -57,34 +65,73 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
   const [groupsLoading, setGroupsLoading] = useState(false);
 
   const uriCacheRef = useRef<Record<string, string>>({});
+  const pageOffsetRef = useRef(0);
+  // Track how many assets we've already fetched creation times for
+  const timesFetchedCountRef = useRef(0);
 
-  // Load all assets
+  // Fetch creation times for newly added assets (one batch per page)
+  const fetchCreationTimesForNew = useCallback((newAssets: Asset[], isLastPage: boolean) => {
+    if (newAssets.length === 0) return;
+    Promise.all(
+      newAssets.map(async (a) => ({ id: a.id, time: await a.getCreationTime() }))
+    ).then((results) => {
+      setCreationTimes((prev) => {
+        const next = { ...prev };
+        results.forEach(({ id, time }) => { if (time !== null) next[id] = time; });
+        return next;
+      });
+      if (isLastPage) setGroupsLoading(false);
+    });
+  }, []);
+
+  // Load first page
   useEffect(() => {
     if (!permission?.granted) return;
     setLoading(true);
+    setGroupsLoading(true);
+    pageOffsetRef.current = 0;
+    timesFetchedCountRef.current = 0;
     new Query()
       .eq(AssetField.MEDIA_TYPE, MediaType.IMAGE)
       .orderBy({ key: AssetField.CREATION_TIME, ascending: true })
+      .limit(PAGE_SIZE)
       .exe()
       .then((results) => {
         setAssets(results);
+        pageOffsetRef.current = results.length;
+        timesFetchedCountRef.current = results.length;
+        const isLast = results.length < PAGE_SIZE;
+        setHasMore(!isLast);
         setLoading(false);
+        fetchCreationTimesForNew(results, isLast);
       });
   }, [permission?.granted]);
 
-  // Fetch all creation times after assets load (for grouping)
-  useEffect(() => {
-    if (assets.length === 0) return;
-    setGroupsLoading(true);
-    Promise.all(
-      assets.map(async (a) => ({ id: a.id, time: await a.getCreationTime() }))
-    ).then((results) => {
-      const times: Record<string, number> = {};
-      results.forEach(({ id, time }) => { if (time !== null) times[id] = time; });
-      setCreationTimes(times);
-      setGroupsLoading(false);
-    });
-  }, [assets]);
+  const loadMoreAssets = useCallback(() => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    new Query()
+      .eq(AssetField.MEDIA_TYPE, MediaType.IMAGE)
+      .orderBy({ key: AssetField.CREATION_TIME, ascending: true })
+      .limit(PAGE_SIZE)
+      .offset(pageOffsetRef.current)
+      .exe()
+      .then((results) => {
+        if (results.length === 0) {
+          setHasMore(false);
+          setLoadingMore(false);
+          setGroupsLoading(false);
+          return;
+        }
+        setAssets((prev) => [...prev, ...results]);
+        pageOffsetRef.current += results.length;
+        timesFetchedCountRef.current += results.length;
+        const isLast = results.length < PAGE_SIZE;
+        setHasMore(!isLast);
+        setLoadingMore(false);
+        fetchCreationTimesForNew(results, isLast);
+      });
+  }, [loadingMore, hasMore, fetchCreationTimesForNew]);
 
   // Compute groups whenever assets, times, or threshold changes
   const groups = useMemo<PhotoGroup[]>(() => {
@@ -131,14 +178,21 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
     return uri;
   }, []);
 
-  // Resolve URI + creation time for current asset, preload next
+  // Resolve URI + creation time for current asset; preload ahead; trigger page load near end
   useEffect(() => {
     const current = assets[index];
     if (!current) { setCurrentUri(null); setCurrentCreationTime(null); return; }
     getUri(current).then(setCurrentUri);
     current.getCreationTime().then(setCurrentCreationTime);
-    if (assets[index + 1]) getUri(assets[index + 1]);
-  }, [assets, index, getUri]);
+    // Preload upcoming URIs
+    for (let i = 1; i <= URI_PRELOAD_AHEAD; i++) {
+      if (assets[index + i]) getUri(assets[index + i]);
+    }
+    // Load next page when approaching end
+    if (assets.length - index <= LOAD_MORE_THRESHOLD && hasMore && !loadingMore) {
+      loadMoreAssets();
+    }
+  }, [assets, index, getUri, hasMore, loadingMore, loadMoreAssets]);
 
   const isQueued = useCallback(
     (asset: Asset) => deleteQueue.some((a) => a.id === asset.id),
@@ -152,7 +206,6 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
     setIndex((i) => i + 1);
   }, [assets, index, isQueued]);
 
-  // Batch-add multiple assets to delete queue (used by burst detail)
   const queueAssets = useCallback((toQueue: Asset[]) => {
     setDeleteQueue((q) => {
       const existingIds = new Set(q.map((a) => a.id));
@@ -217,9 +270,11 @@ export function PhotoLibraryProvider({ children }: { children: React.ReactNode }
         assets, index, startFrom,
         currentAsset, currentUri, currentCreationTime,
         remaining,
-        done: !loading && remaining === 0,
+        done: !loading && !hasMore && remaining === 0,
         loading,
+        loadingMore,
         canGoBack: index > 0,
+        loadMoreAssets,
         groups, groupsLoading, groupingThresholdSecs, setGroupingThresholdSecs,
         assetIndexOf,
         deleteQueue, committing,
