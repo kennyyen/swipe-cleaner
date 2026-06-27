@@ -1,4 +1,4 @@
-import * as MediaLibrary from 'expo-media-library';
+import { Album } from 'expo-media-library';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -19,22 +19,32 @@ type Props = {
 
 type ActionType = SwipeAction['type'];
 
+type AlbumEntry = { id: string; title: string };
+
 export function SettingsScreen({ settings, onSave, onClose }: Props) {
   const [left, setLeft] = useState<SwipeAction>(settings.leftAction);
   const [right, setRight] = useState<SwipeAction>(settings.rightAction);
-  const [albums, setAlbums] = useState<MediaLibrary.Album[]>([]);
+  const [albums, setAlbums] = useState<AlbumEntry[]>([]);
   const [loadingAlbums, setLoadingAlbums] = useState(false);
   const [pickingFor, setPickingFor] = useState<'left' | 'right' | null>(null);
 
   useEffect(() => {
     setLoadingAlbums(true);
-    MediaLibrary.getAlbumsAsync({ includeSmartAlbums: false })
+    Album.getAll()
+      .then((rawAlbums) =>
+        Promise.all(
+          rawAlbums.map(async (album) => ({
+            id: album.id,
+            title: await album.getTitle(),
+          }))
+        )
+      )
       .then(setAlbums)
       .finally(() => setLoadingAlbums(false));
   }, []);
 
-  const pickAlbum = (album: MediaLibrary.Album) => {
-    const action: SwipeAction = { type: 'album', albumId: album.id, albumName: album.title };
+  const pickAlbum = (entry: AlbumEntry) => {
+    const action: SwipeAction = { type: 'album', albumId: entry.id, albumName: entry.title };
     if (pickingFor === 'left') setLeft(action);
     else if (pickingFor === 'right') setRight(action);
     setPickingFor(null);
@@ -58,15 +68,14 @@ export function SettingsScreen({ settings, onSave, onClose }: Props) {
         {loadingAlbums ? (
           <ActivityIndicator color="#fff" style={{ marginTop: 48 }} />
         ) : albums.length === 0 ? (
-          <View style={styles.emptyAlbums}>
+          <View style={styles.empty}>
             <Text style={styles.emptyText}>No albums found.</Text>
           </View>
         ) : (
           <ScrollView>
-            {albums.map((album) => (
-              <TouchableOpacity key={album.id} style={styles.albumRow} onPress={() => pickAlbum(album)}>
-                <Text style={styles.albumTitle}>{album.title}</Text>
-                <Text style={styles.albumCount}>{album.assetCount} photos</Text>
+            {albums.map((entry) => (
+              <TouchableOpacity key={entry.id} style={styles.albumRow} onPress={() => pickAlbum(entry)}>
+                <Text style={styles.albumTitle}>{entry.title}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -198,16 +207,12 @@ const styles = StyleSheet.create({
   },
   albumPickerText: { color: '#4488ff', fontSize: 15 },
   albumRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#222',
   },
   albumTitle: { color: '#fff', fontSize: 15 },
-  albumCount: { color: '#666', fontSize: 13 },
-  emptyAlbums: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: { color: '#666', fontSize: 15 },
 });

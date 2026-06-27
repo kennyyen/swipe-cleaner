@@ -29,13 +29,23 @@ function actionColor(action: SwipeAction): string {
 }
 
 export function SwipeScreen({ settings, onOpenSettings }: Props) {
-  const { permission, requestPermission, current, remaining, done, keep, deleteCurrent, moveToAlbum } =
-    usePhotoLibrary();
+  const {
+    permission,
+    requestPermission,
+    current,
+    currentUri,
+    remaining,
+    done,
+    loading,
+    keep,
+    deleteCurrent,
+    moveToAlbum,
+  } = usePhotoLibrary();
 
   const executeAction = async (action: SwipeAction) => {
     if (action.type === 'delete') await deleteCurrent();
     else if (action.type === 'album') await moveToAlbum(action.albumId);
-    else await keep();
+    else keep();
   };
 
   if (!permission) {
@@ -57,7 +67,16 @@ export function SwipeScreen({ settings, onOpenSettings }: Props) {
     );
   }
 
-  if (done || !current) {
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color="#fff" size="large" />
+        <Text style={styles.loadingText}>Loading your library…</Text>
+      </View>
+    );
+  }
+
+  if (done || !current || !currentUri) {
     return (
       <View style={styles.center}>
         <Text style={styles.doneTitle}>All done!</Text>
@@ -87,7 +106,7 @@ export function SwipeScreen({ settings, onOpenSettings }: Props) {
       <View style={styles.cardArea}>
         <PhotoCard
           key={current.id}
-          uri={current.uri}
+          uri={currentUri}
           leftAction={settings.leftAction}
           rightAction={settings.rightAction}
           onSwipeLeft={() => executeAction(settings.leftAction)}
@@ -158,6 +177,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  loadingText: {
+    color: '#666',
+    fontSize: 15,
+    marginTop: 16,
   },
   doneTitle: {
     color: '#fff',

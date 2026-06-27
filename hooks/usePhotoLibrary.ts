@@ -1,82 +1,75 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import * as MediaLibrary from 'expo-media-library';
+import { useCallback, useEffect, useState } from 'react';
+import { Album, Asset, AssetField, MediaType, Query, usePermissions } from 'expo-media-library';
 
 export function usePhotoLibrary() {
-  const [permission, requestPermission] = MediaLibrary.usePermissions();
-  const [current, setCurrent] = useState<MediaLibrary.Asset | null>(null);
-  const [remaining, setRemaining] = useState(0);
-  const [done, setDone] = useState(false);
-  const cursorRef = useRef<string | undefined>(undefined);
+  const [permission, requestPermission] = usePermissions();
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [index, setIndex] = useState(0);
+  const [currentUri, setCurrentUri] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const loadAsset = useCallback(async (afterCursor?: string) => {
-    return MediaLibrary.getAssetsAsync({
-      mediaType: 'photo',
-      first: 1,
-      after: afterCursor,
-      sortBy: MediaLibrary.SortBy.creationTime,
-    });
-  }, []);
-
+  // Load all photo assets once permissions are granted
   useEffect(() => {
     if (!permission?.granted) return;
-    loadAsset().then((result) => {
-      if (result.assets.length > 0) {
-        setCurrent(result.assets[0]);
-        cursorRef.current = result.endCursor;
-        setRemaining(result.totalCount);
-      } else {
-        setDone(true);
-      }
-    });
-  }, [permission?.granted, loadAsset]);
+    setLoading(true);
+    new Query()
+      .eq(AssetField.MEDIA_TYPE, MediaType.IMAGE)
+      .orderBy({ key: AssetField.CREATION_TIME, ascending: true })
+      .exe()
+      .then((results) => {
+        setAssets(results);
+        setLoading(false);
+      });
+  }, [permission?.granted]);
 
-  const advanceToNext = useCallback(async () => {
-    const result = await loadAsset(cursorRef.current);
-    cursorRef.current = result.endCursor;
-    if (result.assets.length > 0) {
-      setCurrent(result.assets[0]);
-    } else {
-      setCurrent(null);
-      setDone(true);
+  // Resolve URI for the current asset whenever index or assets change
+  useEffect(() => {
+    const asset = assets[index];
+    if (!asset) {
+      setCurrentUri(null);
+      return;
     }
-  }, [loadAsset]);
+    asset.getUri().then(setCurrentUri);
+  }, [assets, index]);
 
-  const keep = useCallback(async () => {
-    setRemaining((r) => r - 1);
-    await advanceToNext();
-  }, [advanceToNext]);
+  const keep = useCallback(() => {
+    setIndex((i) => i + 1);
+  }, []);
 
   const deleteCurrent = useCallback(async () => {
-    if (!current) return;
+    const asset = assets[index];
+    if (!asset) return;
     try {
-      await MediaLibrary.deleteAssetsAsync([current.id]);
+      await asset.delete();
     } catch {
       // User cancelled iOS system confirmation dialog
     }
-    setRemaining((r) => r - 1);
-    await advanceToNext();
-  }, [current, advanceToNext]);
+    // Remove deleted asset from local list; index stays, pointing at next asset
+    setAssets((prev) => prev.filter((_, i) => i !== index));
+  }, [assets, index]);
 
   const moveToAlbum = useCallback(async (albumId: string) => {
-    if (!current) return;
+    const asset = assets[index];
+    if (!asset) return;
     try {
-      const album = await MediaLibrary.getAlbumAsync(albumId);
-      if (album) {
-        await MediaLibrary.addAssetsToAlbumAsync([current], album, false);
-      }
+      const album = new Album(albumId);
+      await album.add(asset);
     } catch {
-      // Ignore album errors
+      // Ignore album errors silently
     }
-    setRemaining((r) => r - 1);
-    await advanceToNext();
-  }, [current, advanceToNext]);
+    setIndex((i) => i + 1);
+  }, [assets, index]);
+
+  const remaining = Math.max(0, assets.length - index);
 
   return {
     permission,
     requestPermission,
-    current,
+    current: assets[index] ?? null,
+    currentUri,
     remaining,
-    done,
+    done: !loading && remaining === 0,
+    loading,
     keep,
     deleteCurrent,
     moveToAlbum,
